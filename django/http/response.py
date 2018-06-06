@@ -18,6 +18,7 @@ from django.utils import timezone
 from django.utils.encoding import iri_to_uri
 from django.utils.http import http_date
 
+
 _charset_from_content_type_re = re.compile(r';\s*charset=(?P<charset>[^\s;]+)', re.I)
 
 
@@ -274,6 +275,14 @@ class HttpResponseBase:
 
     def writelines(self, lines):
         raise IOError("This %s instance is not writable" % self.__class__.__name__)
+
+    @property
+    def headers(self):
+        headers = []
+        for header_name, header_value in self._headers.values():
+            header = [header_name.encode(), header_value.encode()]
+            headers.append(header)
+        return headers
 
 
 class HttpResponse(HttpResponseBase):
