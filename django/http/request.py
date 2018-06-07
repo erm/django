@@ -156,7 +156,7 @@ class HttpRequest:
             ('?' + iri_to_uri(self.query_string)) if self.query_string else ''
         )
 
-    def validate_host(self):
+    def _validate_host(self):
         # Allow variants of localhost if ALLOWED_HOSTS is empty and DEBUG=True.
         allowed_hosts = settings.ALLOWED_HOSTS
         if settings.DEBUG and not allowed_hosts:

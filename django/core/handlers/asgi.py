@@ -18,6 +18,7 @@ class ASGIRequest(HttpRequest):
         self._post_parse_error = False
         self._read_started = False
         self._stream = BytesIO()
+        self._validate_host()
         self.META = {
             'REQUEST_METHOD': self.method,
             'QUERY_STRING': self.query_string,
