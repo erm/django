@@ -25,6 +25,7 @@ class BaseHandler:
 
         Must be called after the environment is fixed (see __call__ in subclasses).
         """
+
         self._view_middleware = []
         self._template_response_middleware = []
         self._exception_middleware = []
@@ -77,28 +78,27 @@ class BaseHandler:
 
         response = self._middleware_chain(request)
 
-        response._closable_objects.append(request)
+        # # If the exception handler returns a TemplateResponse that has not
+        # # been rendered, force it to be rendered.
+        # if not getattr(response, 'is_rendered', True) and callable(getattr(response, 'render', None)):
+        #     response = response.render()
 
-        # If the exception handler returns a TemplateResponse that has not
-        # been rendered, force it to be rendered.
-        if not getattr(response, 'is_rendered', True) and callable(getattr(response, 'render', None)):
-            response = response.render()
-
-        if response.status_code >= 400:
-            log_response(
-                '%s: %s', response.reason_phrase, request.path,
-                response=response,
-                request=request,
-            )
+        # if response.status_code >= 400:
+        #     log_response(
+        #         '%s: %s', response.reason_phrase, request.path,
+        #         response=response,
+        #         request=request,
+        #     )
 
         return response
 
-    def _get_response(self, request):
+    def _get_response(self, scope):
         """
         Resolve and call the view, then apply view, exception, and
         template_response middleware. This method is everything that happens
         inside the request/response middleware.
         """
+        request = self.request
         response = None
 
         if hasattr(request, 'urlconf'):
@@ -119,41 +119,47 @@ class BaseHandler:
                 break
 
         if response is None:
-            wrapped_callback = self.make_view_atomic(callback)
             try:
-                response = wrapped_callback(request, *callback_args, **callback_kwargs)
-            except Exception as e:
-                response = self.process_exception_by_middleware(e, request)
+                wrapped_callback = self.make_view_atomic(callback)
+                try:
+                    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+                except Exception as e:
+                    response = self.process_exception_by_middleware(e, request)
+            except TypeError as e:
+                # coroutine maybe?
+                print(e)
+                print(callback)
 
-        # Complain if the view returned None (a common error).
-        if response is None:
-            if isinstance(callback, types.FunctionType):    # FBV
-                view_name = callback.__name__
-            else:                                           # CBV
-                view_name = callback.__class__.__name__ + '.__call__'
 
-            raise ValueError(
-                "The view %s.%s didn't return an HttpResponse object. It "
-                "returned None instead." % (callback.__module__, view_name)
-            )
+        # # Complain if the view returned None (a common error).
+        # if response is None:
+        #     if isinstance(callback, types.FunctionType):    # FBV
+        #         view_name = callback.__name__
+        #     else:                                           # CBV
+        #         view_name = callback.__class__.__name__ + '.__call__'
 
-        # If the response supports deferred rendering, apply template
-        # response middleware and then render the response
-        elif hasattr(response, 'render') and callable(response.render):
-            for middleware_method in self._template_response_middleware:
-                response = middleware_method(request, response)
-                # Complain if the template response middleware returned None (a common error).
-                if response is None:
-                    raise ValueError(
-                        "%s.process_template_response didn't return an "
-                        "HttpResponse object. It returned None instead."
-                        % (middleware_method.__self__.__class__.__name__)
-                    )
+        #     raise ValueError(
+        #         "The view %s.%s didn't return an HttpResponse object. It "
+        #         "returned None instead." % (callback.__module__, view_name)
+        #     )
 
-            try:
-                response = response.render()
-            except Exception as e:
-                response = self.process_exception_by_middleware(e, request)
+        # # If the response supports deferred rendering, apply template
+        # # response middleware and then render the response
+        # elif hasattr(response, 'render') and callable(response.render):
+        #     for middleware_method in self._template_response_middleware:
+        #         response = middleware_method(request, response)
+        #         # Complain if the template response middleware returned None (a common error).
+        #         if response is None:
+        #             raise ValueError(
+        #                 "%s.process_template_response didn't return an "
+        #                 "HttpResponse object. It returned None instead."
+        #                 % (middleware_method.__self__.__class__.__name__)
+        #             )
+
+        #     try:
+        #         response = response.render()
+        #     except Exception as e:
+        #         response = self.process_exception_by_middleware(e, request)
 
         return response
 

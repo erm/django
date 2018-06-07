@@ -44,8 +44,12 @@ class ResolverMatch:
             # A class-based view
             self._func_path = func.__class__.__module__ + '.' + func.__class__.__name__
         else:
-            # A function-based view
-            self._func_path = func.__module__ + '.' + func.__name__
+            try:
+                # A function-based view
+                self._func_path = func.__module__ + '.' + func.__name__
+            except AttributeError:
+                # Possibly asgi?
+                self._func_path = func.__class__.__module__ + '.' + func.__class__.__name__
 
         view_path = url_name or self._func_path
         self.view_name = ':'.join(self.namespaces + [view_path])

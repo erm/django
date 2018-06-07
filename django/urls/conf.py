@@ -1,6 +1,7 @@
 """Functions for use in URLsconfs."""
 from functools import partial
 from importlib import import_module
+import asyncio
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -55,6 +56,8 @@ def include(arg, namespace=None):
 
 
 def _path(route, view, kwargs=None, name=None, Pattern=None):
+    print(view)
+
     if isinstance(view, (list, tuple)):
         # For include(...) processing.
         pattern = Pattern(route, is_endpoint=False)
@@ -70,7 +73,10 @@ def _path(route, view, kwargs=None, name=None, Pattern=None):
         pattern = Pattern(route, name=name, is_endpoint=True)
         return URLPattern(pattern, view, kwargs, name)
     else:
-        raise TypeError('view must be a callable or a list/tuple in the case of include().')
+        # Check for coroutine?
+        pattern = Pattern(route, name=name, is_endpoint=True)
+        return URLPattern(pattern, view, kwargs, name)
+        # raise TypeError('view must be a callable or a list/tuple in the case of include().')
 
 
 path = partial(_path, Pattern=RoutePattern)

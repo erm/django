@@ -46,7 +46,7 @@ class View:
             setattr(self, key, value)
 
     @classonlymethod
-    def as_view(cls, **initkwargs):
+    async def as_view(cls, **initkwargs):
         """Main entry point for a request-response process."""
         for key in initkwargs:
             if key in cls.http_method_names:

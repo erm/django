@@ -12,7 +12,7 @@ class ASGIHttpRequest(HttpRequest):
 
     body_receive_timeout = 60
 
-    def __init__(self, scope, body):
+    def __init__(self, scope, body=None):
         self.scope = scope
         self._content_length = 0
         self._post_parse_error = False
@@ -79,13 +79,13 @@ class ASGIHttpRequest(HttpRequest):
                 self._content_length = int(self.META['CONTENT_LENGTH'])
             except (ValueError, TypeError):
                 pass
-        # Body handling
-        # TODO: chunked bodies
-        self._body = body
-        assert isinstance(self._body, bytes), 'Body is not bytes'
-        # Add a stream-a-like for the body
-        self._stream = BytesIO(self._body)
-        # Other bits
+        # # Body handling
+        # # TODO: chunked bodies
+        # self._body = body
+        # assert isinstance(self._body, bytes), 'Body is not bytes'
+        # # Add a stream-a-like for the body
+        # self._stream = BytesIO(self._body)
+        # # Other bits
         self.resolver_match = None
 
     @cached_property
@@ -134,26 +134,30 @@ class ASGIHandlerInstance(base.BaseHandler):
                 'The ASGIHandlerInstance can only handle HTTP connections, not %s' % scope['type'])
         super().__init__()
         self.scope = scope
+        self.request = self.request_class(scope)
         self.load_middleware()
 
     async def __call__(self, receive, send):
         self.send = send
-        body = b''
-        while True:
-            message = await receive()
-            if message['type'] == 'http.disconnect':
-                return
-            else:
-                if 'body' in message:
-                    body += message['body']
-                if not message.get('more_body', False):
-                    await self.send_response(body)
-                    return
+        # body = b''
+        # while True:
+        #     message = await receive()
+        #     if message['type'] == 'http.disconnect':
+        #         return
+        #     else:
+        #         if 'body' in message:
+        #             body += message['body']
+        #         if not message.get('more_body', False):
+        #             # await self.send_response(body)
+        #             return
 
-    async def send_response(self, body, more_body=False):
+        #request = self.request_class(self.scope)
+        response = self.get_response(self.request)
+        await response(receive, send)
+        await self.send_response(response, body=b'sfs')
 
-        request = self.request_class(self.scope, body)
-        response = self.get_response(request)
+    async def send_response(self, response, body, more_body=False):
+        print(response)
 
         await self.send_headers(status=response.status_code, headers=response.headers)
         await self.send_body(body=response.content, more_body=more_body)
