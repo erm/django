@@ -8,62 +8,46 @@ from django.http import HttpRequest, parse_cookie, QueryDict
 from django.utils.functional import cached_property
 
 
-class ASGIHttpRequest(HttpRequest):
+class ASGIRequest(HttpRequest):
 
     body_receive_timeout = 60
 
-    def __init__(self, scope, body):
+    def __init__(self, scope):
         self.scope = scope
         self._content_length = 0
         self._post_parse_error = False
         self._read_started = False
-        self.resolver_match = None
-        self.path = self.scope['path']
-        self.script_name = self.scope.get('root_path', '')
-
-        if self.script_name and self.path.startswith(self.script_name):
-            self.path_info = self.path[len(self.script_name):]
-        else:
-            self.path_info = self.path
-
-        self.method = self.scope['method'].upper()
-        query_string = self.scope.get('query_string', b'')
-
+        self._stream = BytesIO()
         self.META = {
             'REQUEST_METHOD': self.method,
-            'QUERY_STRING': query_string,
-            'SCRIPT_NAME': self.script_name,
+            'QUERY_STRING': self.query_string,
+            'SCRIPT_NAME': self.root_path,
             'PATH_INFO': self.path_info,
         }
-
         if self.scope.get('client', None):
-            self.META['REMOTE_ADDR'] = self.scope['client'][0]
+            self.META['REMOTE_ADDR'] = self.client_host
             self.META['REMOTE_HOST'] = self.META['REMOTE_ADDR']
-            self.META['REMOTE_PORT'] = self.scope['client'][1]
+            self.META['REMOTE_PORT'] = self.client_port
         if self.scope.get('server', None):
-            self.META['SERVER_NAME'] = self.scope['server'][0]
-            self.META['SERVER_PORT'] = str(self.scope['server'][1])
+            self.META['SERVER_NAME'] = self.server_host
+            self.META['SERVER_PORT'] = self.server_port
         else:
             self.META['SERVER_NAME'] = 'unknown'
             self.META['SERVER_PORT'] = '0'
 
-        for name, value in self.scope.get('headers', []):
-            name = name.decode('latin1')
+        for name, value in self.headers.items():
             if name == 'content-length':
                 corrected_name = 'CONTENT_LENGTH'
             elif name == 'content-type':
                 corrected_name = 'CONTENT_TYPE'
             else:
                 corrected_name = 'HTTP_%s' % name.upper().replace('-', '_')
-            # HTTPbis say only ASCII chars are allowed in headers, but we latin1 just in case
-            value = value.decode('latin1')
             if corrected_name in self.META:
                 value = self.META[corrected_name] + ',' + value
             self.META[corrected_name] = value
-        # Pull out request encoding if we find it
+
         if 'CONTENT_TYPE' in self.META:
-            self.content_type, self.content_params = cgi.parse_header(
-                self.META['CONTENT_TYPE'])
+            self.content_type, self.content_params = cgi.parse_header(self.META['CONTENT_TYPE'])
             if 'charset' in self.content_params:
                 try:
                     codecs.lookup(self.content_params['charset'])
@@ -79,21 +63,12 @@ class ASGIHttpRequest(HttpRequest):
                 self._content_length = int(self.META['CONTENT_LENGTH'])
             except (ValueError, TypeError):
                 pass
-        # Body handling
-        # TODO: chunked bodies
-        self._body = body
-        assert isinstance(self._body, bytes), 'Body is not bytes'
-        # Add a stream-a-like for the body
-        self._stream = BytesIO(self._body)
-        # Other bits
+
         self.resolver_match = None
 
     @cached_property
     def GET(self):
-        return QueryDict(self.scope.get('query_string', ''))
-
-    def _get_scheme(self):
-        return self.scope.get('scheme', 'http')
+        return QueryDict(self.query_string)
 
     def _get_post(self):
         if not hasattr(self, '_post'):
@@ -115,48 +90,45 @@ class ASGIHttpRequest(HttpRequest):
 
     @cached_property
     def COOKIES(self):
-        return parse_cookie(self.META.get('HTTP_COOKIE', ''))
+        return parse_cookie(self.headers.get('cookie'))
 
 
-class ASGIHandler:
+class ASGIHandler(base.BaseHandler):
+
+    request_class = ASGIRequest
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.load_middleware()
 
     def __call__(self, scope):
-        return ASGIHandlerInstance(scope)
+        # signals.request_started.send(sender=self.__class__, environ=environ)
+        request = self.request_class(scope)
+        response = self.get_response(request)
+        response._handler_class = self.__class__
+        # status = '%d %s' % (response.status_code, response.reason_phrase)
+        response_headers = list(response.items())
+        for c in response.cookies.values():
+            response_headers.append(('Set-Cookie', c.output(header='')))
+
+        # if getattr(response, 'file_to_stream', None) is not None and environ.get('wsgi.file_wrapper'):
+        #     response = environ['wsgi.file_wrapper'](response.file_to_stream)
+        return ASGIHandlerInstance(scope, request=request, response=response)
 
 
-class ASGIHandlerInstance(base.BaseHandler):
+class ASGIHandlerInstance:
 
-    request_class = ASGIHttpRequest
-
-    def __init__(self, scope):
+    def __init__(self, scope, request=None, response=None):
         if scope['type'] != 'http':
             raise ValueError(
                 'The ASGIHandlerInstance can only handle HTTP connections, not %s' % scope['type'])
-        super().__init__()
         self.scope = scope
-        self.load_middleware()
+        self.response = response
 
     async def __call__(self, receive, send):
         self.send = send
-        body = b''
-        while True:
-            message = await receive()
-            if message['type'] == 'http.disconnect':
-                return
-            else:
-                if 'body' in message:
-                    body += message['body']
-                if not message.get('more_body', False):
-                    await self.send_response(body)
-                    return
-
-    async def send_response(self, body, more_body=False):
-
-        request = self.request_class(self.scope, body)
-        response = self.get_response(request)
-
-        await self.send_headers(status=response.status_code, headers=response.headers)
-        await self.send_body(body=response.content, more_body=more_body)
+        await self.send_headers(status=self.response.status_code, headers=self.response.headers)
+        await self.send_body(body=self.response.content)
 
     async def send_headers(self, status=200, headers=[[b'content-type', b'text/plain']]):
         await self.send({

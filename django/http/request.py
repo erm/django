@@ -36,23 +36,19 @@ class RawPostDataException(Exception):
 
 
 class HttpRequest:
-    """A basic HTTP request."""
+    # async
 
     # The encoding used in GET/POST dicts. None means use default setting.
     _encoding = None
     _upload_handlers = []
 
     def __init__(self):
-        # WARNING: The `WSGIRequest` subclass doesn't call `super`.
-        # Any variable assignment made here should also happen in
-        # `WSGIRequest.__init__()`.
-
         self.GET = QueryDict(mutable=True)
         self.POST = QueryDict(mutable=True)
         self.COOKIES = {}
-        self.META = {}
         self.FILES = MultiValueDict()
 
+        self.scope = {}
         self.path = ''
         self.path_info = ''
         self.method = None
@@ -61,57 +57,89 @@ class HttpRequest:
         self.content_type = None
         self.content_params = None
 
-    def __repr__(self):
-        if self.method is None or not self.get_full_path():
-            return '<%s>' % self.__class__.__name__
-        return '<%s: %s %r>' % (self.__class__.__name__, self.method, self.get_full_path())
+    @property
+    def raw_headers(self):
+        return self.scope['headers']
 
-    def _get_raw_host(self):
-        """
-        Return the HTTP host using the environment or request headers. Skip
-        allowed hosts protection, so may return an insecure host.
-        """
-        # We try three options, in order of decreasing preference.
-        if settings.USE_X_FORWARDED_HOST and (
-                'HTTP_X_FORWARDED_HOST' in self.META):
-            host = self.META['HTTP_X_FORWARDED_HOST']
-        elif 'HTTP_HOST' in self.META:
-            host = self.META['HTTP_HOST']
-        else:
-            # Reconstruct the host using the algorithm from PEP 333.
-            host = self.META['SERVER_NAME']
-            server_port = self.get_port()
-            if server_port != ('443' if self.is_secure() else '80'):
-                host = '%s:%s' % (host, server_port)
-        return host
+    @property
+    def path(self):
+        return self.scope['path']
+
+    @property
+    def root_path(self):
+        return self.scope.get('root_path', '')
+
+    @property
+    def path_info(self):
+        if self.root_path and self.path.startswith(self.root_path):
+            return self.path[len(self.root_path):]
+        return self.path
+
+    @property
+    def method(self):
+        return self.scope['method'].upper()
+
+    @property
+    def headers(self):
+        return {k.decode('ascii').lower(): v.decode('ascii') for k, v in self.raw_headers}
+
+    # @property
+    # def content_length(self):
+    #     try:
+    #         return int(self.headers.get("content-length", None))
+    #     except ValueError:
+    #         return None
+
+    # @property
+    # def content_type(self):
+    #     return self.headers.get("content-type", None)
+
+    @property
+    def content(self):
+        return b"".join(self.body)
+
+    @property
+    def scheme(self):
+        return self.scope['scheme']
+
+    @property
+    def is_secure(self):
+        return self.scope['scheme'] == 'https'
+
+    @property
+    def server(self):
+        return self.scope['server']
+
+    @property
+    def client(self):
+        return self.scope['client']
+
+    @property
+    def server_str(self):
+        return self.get_host()
+
+    @property
+    def server_host(self):
+        return self.server[0]
+
+    @property
+    def server_port(self):
+        return self.server[1]
+
+    @property
+    def client_host(self):
+        return self.client[0]
+
+    @property
+    def client_port(self):
+        return self.client[1]
+
+    @property
+    def query_string(self):
+        return self.scope.get('query_string', '')
 
     def get_host(self):
-        """Return the HTTP host using the environment or request headers."""
-        host = self._get_raw_host()
-
-        # Allow variants of localhost if ALLOWED_HOSTS is empty and DEBUG=True.
-        allowed_hosts = settings.ALLOWED_HOSTS
-        if settings.DEBUG and not allowed_hosts:
-            allowed_hosts = ['localhost', '127.0.0.1', '[::1]']
-
-        domain, port = split_domain_port(host)
-        if domain and validate_host(domain, allowed_hosts):
-            return host
-        else:
-            msg = "Invalid HTTP_HOST header: %r." % host
-            if domain:
-                msg += " You may need to add %r to ALLOWED_HOSTS." % domain
-            else:
-                msg += " The domain name provided is not valid according to RFC 1034/1035."
-            raise DisallowedHost(msg)
-
-    def get_port(self):
-        """Return the port number for the request as a string."""
-        if settings.USE_X_FORWARDED_PORT and 'HTTP_X_FORWARDED_PORT' in self.META:
-            port = self.META['HTTP_X_FORWARDED_PORT']
-        else:
-            port = self.META['SERVER_PORT']
-        return str(port)
+        return '%s:%s' % (self.server)
 
     def get_full_path(self, force_append_slash=False):
         return self._get_full_path(self.path, force_append_slash)
@@ -125,8 +153,22 @@ class HttpRequest:
         return '%s%s%s' % (
             escape_uri_path(path),
             '/' if force_append_slash and not path.endswith('/') else '',
-            ('?' + iri_to_uri(self.META.get('QUERY_STRING', ''))) if self.META.get('QUERY_STRING', '') else ''
+            ('?' + iri_to_uri(self.query_string)) if self.query_string else ''
         )
+
+    def validate_host(self):
+        # Allow variants of localhost if ALLOWED_HOSTS is empty and DEBUG=True.
+        allowed_hosts = settings.ALLOWED_HOSTS
+        if settings.DEBUG and not allowed_hosts:
+            allowed_hosts = ['localhost', '127.0.0.1', '[::1]']
+
+        if not validate_host(self.server_host, allowed_hosts):
+            msg = "Invalid HTTP_HOST header: %r." % self.server_str
+            if self.server_host:
+                msg += " You may need to add %r to ALLOWED_HOSTS." % self.server_host
+            else:
+                msg += " The domain name provided is not valid according to RFC 1034/1035."
+            raise DisallowedHost(msg)
 
     def get_signed_cookie(self, key, default=RAISE_ERROR, salt='', max_age=None):
         """
@@ -158,7 +200,7 @@ class HttpRequest:
         """
         return '{scheme}://{host}{path}'.format(
             scheme=self.scheme,
-            host=self._get_raw_host(),
+            host=self.server_str,
             path=self.get_full_path(),
         )
 
@@ -199,31 +241,9 @@ class HttpRequest:
     def _current_scheme_host(self):
         return '{}://{}'.format(self.scheme, self.get_host())
 
-    def _get_scheme(self):
-        """
-        Hook for subclasses like WSGIRequest to implement. Return 'http' by
-        default.
-        """
-        return 'http'
-
-    @property
-    def scheme(self):
-        if settings.SECURE_PROXY_SSL_HEADER:
-            try:
-                header, value = settings.SECURE_PROXY_SSL_HEADER
-            except ValueError:
-                raise ImproperlyConfigured(
-                    'The SECURE_PROXY_SSL_HEADER setting must be a tuple containing two values.'
-                )
-            if self.META.get(header) == value:
-                return 'https'
-        return self._get_scheme()
-
-    def is_secure(self):
-        return self.scheme == 'https'
-
     def is_ajax(self):
-        return self.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
+        return False
+        #return self.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
 
     @property
     def encoding(self):
