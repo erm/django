@@ -152,7 +152,7 @@ class ASGIHandlerInstance:
 
         return response
 
-    async def _get_response(self, request):
+    def _get_response(self, request):
         response = None
 
         if hasattr(request, 'urlconf'):
@@ -184,7 +184,6 @@ class ASGIHandlerInstance:
                 "The view %s.%s didn't return an HttpResponse object. It "
                 "returned None instead." % (callback.__module__, view_name)
             )
-
         return response
 
     def process_exception_by_middleware(self, exception, request):
