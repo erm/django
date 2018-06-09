@@ -1,11 +1,19 @@
 import cgi
 import codecs
 from io import BytesIO
+import logging
+import types
 
-
-from django.core.handlers import base
 from django.http import HttpRequest, parse_cookie, QueryDict
 from django.utils.functional import cached_property
+from django.conf import settings
+from django.db import connections, transaction
+from django.urls import get_resolver, set_urlconf
+from django.utils.log import log_response
+
+from .exception import response_for_exception
+
+logger = logging.getLogger('django.request')
 
 
 class ASGIRequest(HttpRequest):
@@ -48,7 +56,8 @@ class ASGIRequest(HttpRequest):
             self.META[corrected_name] = value
 
         if 'CONTENT_TYPE' in self.META:
-            self.content_type, self.content_params = cgi.parse_header(self.META['CONTENT_TYPE'])
+            self.content_type, self.content_params = cgi.parse_header(
+                self.META['CONTENT_TYPE'])
             if 'charset' in self.content_params:
                 try:
                     codecs.lookup(self.content_params['charset'])
@@ -94,42 +103,100 @@ class ASGIRequest(HttpRequest):
         return parse_cookie(self.headers.get('cookie'))
 
 
-class ASGIHandler(base.BaseHandler):
-
-    request_class = ASGIRequest
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.load_middleware()
+class ASGIHandler:
 
     def __call__(self, scope):
-        # signals.request_started.send(sender=self.__class__, environ=environ)
-        request = self.request_class(scope)
-        response = self.get_response(request)
-        response._handler_class = self.__class__
-        # status = '%d %s' % (response.status_code, response.reason_phrase)
-        response_headers = list(response.items())
-        for c in response.cookies.values():
-            response_headers.append(('Set-Cookie', c.output(header='')))
-
-        # if getattr(response, 'file_to_stream', None) is not None and environ.get('wsgi.file_wrapper'):
-        #     response = environ['wsgi.file_wrapper'](response.file_to_stream)
-        return ASGIHandlerInstance(scope, request=request, response=response)
+        return ASGIHandlerInstance(scope)
 
 
 class ASGIHandlerInstance:
 
-    def __init__(self, scope, request=None, response=None):
+    def __init__(self, scope):
         if scope['type'] != 'http':
             raise ValueError(
                 'The ASGIHandlerInstance can only handle HTTP connections, not %s' % scope['type'])
         self.scope = scope
-        self.response = response
 
     async def __call__(self, receive, send):
         self.send = send
-        await self.send_headers(status=self.response.status_code, headers=self.response.headers)
-        await self.send_body(body=self.response.content)
+        request = ASGIRequest(self.scope)
+        response = await self.get_response(request)
+
+        await self.send_headers(status=response.status_code, headers=response.headers)
+        await self.send_body(body=response.content)
+
+    def make_view_atomic(self, view):
+        non_atomic_requests = getattr(view, '_non_atomic_requests', set())
+        for db in connections.all():
+            if db.settings_dict['ATOMIC_REQUESTS'] and db.alias not in non_atomic_requests:
+                view = transaction.atomic(using=db.alias)(view)
+        return view
+
+    async def get_response(self, request):
+        set_urlconf(settings.ROOT_URLCONF)
+
+        try:
+            response = await self._get_response(request)
+        except Exception as exc:
+            response = response_for_exception(request, exc)
+
+        if not getattr(response, 'is_rendered', True) and callable(getattr(response, 'render', None)):
+            response = response.render()
+
+        if response.status_code >= 400:
+            log_response(
+                '%s: %s', response.reason_phrase, request.path,
+                response=response,
+                request=request,
+            )
+
+        return response
+
+    async def _get_response(self, request):
+        response = None
+
+        if hasattr(request, 'urlconf'):
+            urlconf = request.urlconf
+            set_urlconf(urlconf)
+            resolver = get_resolver(urlconf)
+        else:
+            resolver = get_resolver()
+
+        resolver_match = resolver.resolve(request.path_info)
+        callback, callback_args, callback_kwargs = resolver_match
+        request.resolver_match = resolver_match
+
+        if response is None:
+            wrapped_callback = self.make_view_atomic(callback)
+            try:
+                response = wrapped_callback(request, *callback_args, **callback_kwargs)
+            except Exception as e:
+                response = self.process_exception_by_middleware(e, request)
+
+        # Complain if the view returned None (a common error).
+        if response is None:
+            if isinstance(callback, types.FunctionType):    # FBV
+                view_name = callback.__name__
+            else:                                           # CBV
+                view_name = callback.__class__.__name__ + '.__call__'
+
+            raise ValueError(
+                "The view %s.%s didn't return an HttpResponse object. It "
+                "returned None instead." % (callback.__module__, view_name)
+            )
+
+        return response
+
+    def process_exception_by_middleware(self, exception, request):
+        """
+        Pass the exception to the exception middleware. If no middleware
+        return a response for this exception, raise it.
+        """
+        for middleware_method in self._exception_middleware:
+            response = middleware_method(request, exception)
+            if response:
+                return response
+        raise
 
     async def send_headers(self, status=200, headers=[[b'content-type', b'text/plain']]):
         await self.send({

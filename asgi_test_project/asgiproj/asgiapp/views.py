@@ -1,4 +1,10 @@
-from django.views.generic import TemplateView
+from django.views.generic import View, TemplateView
+
+
+# class TestView(View):
+
+#     def get(self, request, *args, **kwargs):
+#         return None
 
 
 class TestView(TemplateView):
