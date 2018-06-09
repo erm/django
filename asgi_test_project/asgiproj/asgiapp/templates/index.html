@@ -7,5 +7,11 @@
         <h1>Hi</h1>
         {{ request }}
        {{ context_test }}
+        <form action="/test/form/" method="post">
+            {% csrf_token %}
+            <label for="test">Test</label>
+            <input type="text" id="test name="test">
+            <input type="submit">
+        </form>
     </body>
 </html>

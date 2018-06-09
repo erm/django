@@ -36,7 +36,6 @@ class RawPostDataException(Exception):
 
 
 class HttpRequest:
-    # async
 
     # The encoding used in GET/POST dicts. None means use default setting.
     _encoding = None

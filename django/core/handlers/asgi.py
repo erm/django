@@ -152,7 +152,7 @@ class ASGIHandlerInstance:
 
         return response
 
-    def _get_response(self, request):
+    async def _get_response(self, request):
         response = None
 
         if hasattr(request, 'urlconf'):
@@ -169,9 +169,9 @@ class ASGIHandlerInstance:
         if response is None:
             wrapped_callback = self.make_view_atomic(callback)
             try:
-                response = wrapped_callback(request, *callback_args, **callback_kwargs)
+                response = await wrapped_callback(request, *callback_args, **callback_kwargs)
             except Exception as e:
-                response = self.process_exception_by_middleware(e, request)
+                response = await self.process_exception_by_middleware(e, request)
 
         # Complain if the view returned None (a common error).
         if response is None:
@@ -186,7 +186,7 @@ class ASGIHandlerInstance:
             )
         return response
 
-    def process_exception_by_middleware(self, exception, request):
+    async def process_exception_by_middleware(self, exception, request):
         """
         Pass the exception to the exception middleware. If no middleware
         return a response for this exception, raise it.
