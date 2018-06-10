@@ -18,8 +18,6 @@ logger = logging.getLogger('django.request')
 
 class ASGIRequest(HttpRequest):
 
-    body_receive_timeout = 60
-
     def __init__(self, scope):
         self.scope = scope
         self._content_length = 0
@@ -119,7 +117,23 @@ class ASGIHandlerInstance:
 
     async def __call__(self, receive, send):
         self.send = send
+        _body = []
+
+        while True:
+            message = await receive()
+
+            if message['type'] == 'http.disconnect':
+                break
+
+            if 'body' in message:
+                _body.append(message['body'])
+
+                more_body = message.get('more_body', False)
+                if not more_body:
+                    break
+
         request = ASGIRequest(self.scope)
+        request._body = b''.join(_body)
         response = await self.get_response(request)
 
         await self.send_headers(status=response.status_code, headers=response.headers)

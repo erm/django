@@ -31,7 +31,5 @@ class TestView(TemplateView):
         return self.render_to_response(context)
 
     async def post(self, request, *args, **kwargs):
-        print(args)
-        print(kwargs)
         print(request.POST)
-
+        return await self.get(request, *args, **kwargs)

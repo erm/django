@@ -241,8 +241,7 @@ class HttpRequest:
         return '{}://{}'.format(self.scheme, self.get_host())
 
     def is_ajax(self):
-        return False
-        #return self.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
+        return self.META.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
 
     @property
     def encoding(self):
