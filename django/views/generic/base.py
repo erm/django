@@ -58,14 +58,14 @@ class View:
                                 "only accepts arguments that are already "
                                 "attributes of the class." % (cls.__name__, key))
 
-        def view(request, *args, **kwargs):
+        async def view(request, *args, **kwargs):
             self = cls(**initkwargs)
             if hasattr(self, 'get') and not hasattr(self, 'head'):
                 self.head = self.get
             self.request = request
             self.args = args
             self.kwargs = kwargs
-            return self.dispatch(request, *args, **kwargs)
+            return await self.dispatch(request, *args, **kwargs)
         view.view_class = cls
         view.view_initkwargs = initkwargs
 
@@ -77,7 +77,7 @@ class View:
         update_wrapper(view, cls.dispatch, assigned=())
         return view
 
-    def dispatch(self, request, *args, **kwargs):
+    async def dispatch(self, request, *args, **kwargs):
         # Try to dispatch to the right method; if a method doesn't exist,
         # defer to the error handler. Also defer to the error handler if the
         # request method isn't on the approved list.
@@ -85,7 +85,7 @@ class View:
             handler = getattr(self, request.method.lower(), self.http_method_not_allowed)
         else:
             handler = self.http_method_not_allowed
-        return handler(request, *args, **kwargs)
+        return await handler(request, *args, **kwargs)
 
     def http_method_not_allowed(self, request, *args, **kwargs):
         logger.warning(
@@ -145,7 +145,7 @@ class TemplateView(TemplateResponseMixin, ContextMixin, View):
     """
     Render a template. Pass keyword arguments from the URLconf to the context.
     """
-    def get(self, request, *args, **kwargs):
+    async def get(self, request, *args, **kwargs):
         context = self.get_context_data(**kwargs)
         return self.render_to_response(context)
 

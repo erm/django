@@ -275,6 +275,12 @@ class HttpResponseBase:
     def writelines(self, lines):
         raise IOError("This %s instance is not writable" % self.__class__.__name__)
 
+    # Headers for ASGI response
+    @property
+    def headers(self):
+        headers = [[k.encode(), v.encode()] for k, v in self._headers.values()]
+        return headers
+
 
 class HttpResponse(HttpResponseBase):
     """
