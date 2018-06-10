@@ -27,18 +27,21 @@ class ASGIRequest(HttpRequest):
         self._read_started = False
         self._stream = BytesIO()
 
-        # Handle converting the scope to META
-        self.root_path = self.scope.get('root_path', '')
         self.path = self.scope['path']
-        if self.root_path and self.path.startswith(self.root_path):
-            self.path_info = self.path[len(self.root_path):]
+        if not self.path.endswith('/'):
+            self.path += '/'
+
+        script_name = self.scope.get('root_path', '')
+
+        if script_name and self.path.startswith(script_name):
+            self.path_info = self.path[len(script_name):]
         else:
             self.path_info = self.path
 
         self.META = {
             'REQUEST_METHOD': self.scope['method'],
             'QUERY_STRING': self.query_string,
-            'SCRIPT_NAME': self.root_path,
+            'SCRIPT_NAME': script_name,
             'PATH_INFO': self.path_info,
         }
 
@@ -156,16 +159,14 @@ class ASGIHandlerInstance:
         await self.send_headers(status=response.status_code, headers=response.headers)
         await self.send_body(body=response.content)
 
-    def make_view_atomic(self, view):
-        non_atomic_requests = getattr(view, '_non_atomic_requests', set())
-        for db in connections.all():
-            if db.settings_dict['ATOMIC_REQUESTS'] and db.alias not in non_atomic_requests:
-                view = transaction.atomic(using=db.alias)(view)
-        return view
+    # def make_view_atomic(self, view):
+    #     non_atomic_requests = getattr(view, '_non_atomic_requests', set())
+    #     for db in connections.all():
+    #         if db.settings_dict['ATOMIC_REQUESTS'] and db.alias not in non_atomic_requests:
+    #             view = transaction.atomic(using=db.alias)(view)
+    #     return view
 
     async def get_response(self, request):
-        set_urlconf(settings.ROOT_URLCONF)
-
         try:
             response = await self._get_response(request)
         except Exception as exc:
@@ -188,7 +189,7 @@ class ASGIHandlerInstance:
 
         if hasattr(request, 'urlconf'):
             urlconf = request.urlconf
-            set_urlconf(urlconf)
+            # set_urlconf(urlconf)
             resolver = get_resolver(urlconf)
         else:
             resolver = get_resolver()
@@ -197,10 +198,11 @@ class ASGIHandlerInstance:
         callback, callback_args, callback_kwargs = resolver_match
         request.resolver_match = resolver_match
 
+
         if response is None:
-            wrapped_callback = self.make_view_atomic(callback)
+            # wrapped_callback = self.make_view_atomic(callback)
             try:
-                response = await wrapped_callback(request, *callback_args, **callback_kwargs)
+                response = await callback(request, *callback_args, **callback_kwargs)
             except Exception as e:
                 response = await self.process_exception_by_middleware(e, request)
 
