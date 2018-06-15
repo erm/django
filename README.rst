@@ -1,44 +1,48 @@
-Django is a high-level Python Web framework that encourages rapid development
-and clean, pragmatic design. Thanks for checking it out.
+Proof-of-concept implementation of asyncio/ASGI in Django's core to help inform any potential roadmap for future async-support in Django. A test project using this fork can be found here: https://github.com/erm/django-async-tests.
 
-All documentation is in the "``docs``" directory and online at
-https://docs.djangoproject.com/en/stable/. If you're just getting started,
-here's how we recommend you read the docs:
+Reference
+=========
 
-* First, read ``docs/intro/install.txt`` for instructions on installing Django.
+Below are links to various ASGI-related projects and materials.
 
-* Next, work through the tutorials in order (``docs/intro/tutorial01.txt``,
-  ``docs/intro/tutorial02.txt``, etc.).
+Django
+------
 
-* If you want to set up an actual deployment server, read
-  ``docs/howto/deployment/index.txt`` for instructions.
+`A Django Async Roadmap <https://www.aeracode.org/2018/06/04/django-async-roadmap/>`_
 
-* You'll probably want to read through the topical guides (in ``docs/topics``)
-  next; from there you can jump to the HOWTOs (in ``docs/howto``) for specific
-  problems, and check out the reference (``docs/ref``) for gory details.
+`Discussion thread on the django-developers mailing list <https://groups.google.com/forum/#!topic/django-developers/Kw7-xV6TrSM/>`_
 
-* See ``docs/README`` for instructions on building an HTML version of the docs.
+`Django Channels <https://channels.readthedocs.io/>`_
 
-Docs are updated rigorously. If you find any problems in the docs, or think
-they should be clarified in any way, please take 30 seconds to fill out a
-ticket here: https://code.djangoproject.com/newticket
+ASGI
+----
+`ASGI (Asynchronous Server Gateway Interface) <https://asgi.readthedocs.io/>`_
 
-To get more help:
+`asgiref <https://github.com/django/asgiref/>`_
 
-* Join the ``#django`` channel on irc.freenode.net. Lots of helpful people hang out
-  there. Read the archives at https://botbot.me/freenode/django/. See
-  https://en.wikipedia.org/wiki/Wikipedia:IRC/Tutorial if you're new to IRC.
+Servers
++++++++
 
-* Join the django-users mailing list, or read the archives, at
-  https://groups.google.com/group/django-users.
+`daphne <https://github.com/django/daphne/>`_
 
-To contribute to Django:
+`uvicorn <https://github.com/uvicorn/>`_
 
-* Check out https://docs.djangoproject.com/en/dev/internals/contributing/ for
-  information about getting involved.
+`hypercorn <https://gitlab.com/pgjones/hypercorn/>`_
 
-To run Django's test suite:
+`fikki <https://github.com/erm/fikki/>`_
 
-* Follow the instructions in the "Unit tests" section of
-  ``docs/internals/contributing/writing-code/unit-tests.txt``, published online at
-  https://docs.djangoproject.com/en/dev/internals/contributing/writing-code/unit-tests/#running-the-unit-tests
+Frameworks
+++++++++++
+
+`quart <https://gitlab.com/pgjones/quart>`_
+
+`afiqah <https://afiqah.readthedocs.io/>`_
+
+Asyncio
+-------
+
+`asyncio <https://docs.python.org/3/library/asyncio.html>`_
+
+`uvloop <https://github.com/MagicStack/uvloop/>`_
+
+`Python & Async Simplified <https://www.aeracode.org/2018/02/19/python-async-simplified/>`_

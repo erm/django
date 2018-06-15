@@ -105,6 +105,44 @@ class View:
         return [m.upper() for m in self.http_method_names if hasattr(self, m)]
 
 
+class AsyncView(View):
+
+    @classonlymethod
+    def as_view(cls, **initkwargs):
+        for key in initkwargs:
+            if key in cls.http_method_names:
+                raise TypeError("You tried to pass in the %s method name as a "
+                                "keyword argument to %s(). Don't do that."
+                                % (key, cls.__name__))
+            if not hasattr(cls, key):
+                raise TypeError("%s() received an invalid keyword %r. as_view "
+                                "only accepts arguments that are already "
+                                "attributes of the class." % (cls.__name__, key))
+
+        async def view(request, *args, **kwargs):
+            self = cls(**initkwargs)
+            if hasattr(self, 'get') and not hasattr(self, 'head'):
+                self.head = self.get
+            self.request = request
+            self.args = args
+            self.kwargs = kwargs
+            return await self.dispatch(request, *args, **kwargs)
+        view.view_class = cls
+        view.view_initkwargs = initkwargs
+
+        update_wrapper(view, cls, updated=())
+
+        update_wrapper(view, cls.dispatch, assigned=())
+        return view
+
+    async def dispatch(self, request, *args, **kwargs):
+        if request.method.lower() in self.http_method_names:
+            handler = getattr(self, request.method.lower(), self.http_method_not_allowed)
+        else:
+            handler = self.http_method_not_allowed
+        return await handler(request, *args, **kwargs)
+
+
 class TemplateResponseMixin:
     """A mixin that can be used to render a template."""
     template_name = None

@@ -62,6 +62,12 @@ class HttpResponseBase:
         self['Content-Type'] = content_type
 
     @property
+    def headers(self):
+        # Headers for ASGI response
+        headers = [[k.encode(), v.encode()] for k, v in self._headers.values()]
+        return headers
+
+    @property
     def reason_phrase(self):
         if self._reason_phrase is not None:
             return self._reason_phrase

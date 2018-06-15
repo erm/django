@@ -1,4 +1,4 @@
-from django.views.generic.base import RedirectView, TemplateView, View
+from django.views.generic.base import RedirectView, TemplateView, View, AsyncView
 from django.views.generic.dates import (
     ArchiveIndexView, DateDetailView, DayArchiveView, MonthArchiveView,
     TodayArchiveView, WeekArchiveView, YearArchiveView,
@@ -10,7 +10,7 @@ from django.views.generic.edit import (
 from django.views.generic.list import ListView
 
 __all__ = [
-    'View', 'TemplateView', 'RedirectView', 'ArchiveIndexView',
+    'View', 'AsyncView', 'TemplateView', 'RedirectView', 'ArchiveIndexView',
     'YearArchiveView', 'MonthArchiveView', 'WeekArchiveView', 'DayArchiveView',
     'TodayArchiveView', 'DateDetailView', 'DetailView', 'FormView',
     'CreateView', 'UpdateView', 'DeleteView', 'ListView', 'GenericViewError',
