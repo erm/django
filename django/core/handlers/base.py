@@ -60,12 +60,12 @@ class BaseHandler:
         # as a flag for initialization being complete.
         self._middleware_chain = handler
 
-    def make_view_atomic(self, view):
-        non_atomic_requests = getattr(view, '_non_atomic_requests', set())
-        for db in connections.all():
-            if db.settings_dict['ATOMIC_REQUESTS'] and db.alias not in non_atomic_requests:
-                view = transaction.atomic(using=db.alias)(view)
-        return view
+    # def make_view_atomic(self, view):
+    #     non_atomic_requests = getattr(view, '_non_atomic_requests', set())
+    #     for db in connections.all():
+    #         if db.settings_dict['ATOMIC_REQUESTS'] and db.alias not in non_atomic_requests:
+    #             view = transaction.atomic(using=db.alias)(view)
+    #     return view
 
     def get_exception_response(self, request, resolver, status_code, exception):
         return get_exception_response(request, resolver, status_code, exception, self.__class__)
@@ -119,9 +119,9 @@ class BaseHandler:
                 break
 
         if response is None:
-            wrapped_callback = self.make_view_atomic(callback)
+            # wrapped_callback = self.make_view_atomic(callback)
             try:
-                response = wrapped_callback(request, *callback_args, **callback_kwargs)
+                response = callback(request, *callback_args, **callback_kwargs)
             except Exception as e:
                 response = self.process_exception_by_middleware(e, request)
 
