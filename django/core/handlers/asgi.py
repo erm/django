@@ -6,9 +6,7 @@ import types
 
 from django.http import HttpRequest, parse_cookie, QueryDict
 from django.utils.functional import cached_property
-from django.conf import settings
-from django.db import connections, transaction
-from django.urls import get_resolver, set_urlconf
+from django.urls import get_resolver
 from django.utils.log import log_response
 
 from .exception import response_for_exception
@@ -120,6 +118,20 @@ class ASGIRequest(HttpRequest):
     def COOKIES(self):
         return parse_cookie(self.META.get('HTTP_COOKIE', ''))
 
+    async def stream(self):
+        if hasattr(self, "_body"):
+            yield self._body
+        return
+
+    async def body(self):
+        if not hasattr(self, "_body"):
+            body = b""
+            async for chunk in self.stream():
+                body += chunk
+            self._body = body
+
+        return self._body
+
 
 class ASGIHandler:
 
@@ -137,27 +149,22 @@ class ASGIHandlerInstance:
 
     async def __call__(self, receive, send):
         self.send = send
-        _body = []
-
-        while True:
-            message = await receive()
-
-            if message['type'] == 'http.disconnect':
-                break
-
-            if 'body' in message:
-                _body.append(message['body'])
-
-                more_body = message.get('more_body', False)
-                if not more_body:
-                    break
 
         request = ASGIRequest(self.scope)
-        request._body = b''.join(_body)
+        await request.body()
         response = await self.get_response(request)
 
-        await self.send_headers(status=response.status_code, headers=response.headers)
-        await self.send_body(body=response.content)
+        await self.send({
+            'type': 'http.response.start',
+            'status': response.status_code,
+            'headers': response.headers
+        })
+
+        await self.send({
+            'type': 'http.response.body',
+            'body': response.content,
+            'more_body': False
+        })
 
     # def make_view_atomic(self, view):
     #     non_atomic_requests = getattr(view, '_non_atomic_requests', set())
@@ -198,13 +205,12 @@ class ASGIHandlerInstance:
         callback, callback_args, callback_kwargs = resolver_match
         request.resolver_match = resolver_match
 
-
         if response is None:
             # wrapped_callback = self.make_view_atomic(callback)
             try:
                 response = await callback(request, *callback_args, **callback_kwargs)
             except Exception as e:
-                response = await self.process_exception_by_middleware(e, request)
+                return response_for_exception(request, e)
 
         # Complain if the view returned None (a common error).
         if response is None:
@@ -218,28 +224,3 @@ class ASGIHandlerInstance:
                 "returned None instead." % (callback.__module__, view_name)
             )
         return response
-
-    async def process_exception_by_middleware(self, exception, request):
-        """
-        Pass the exception to the exception middleware. If no middleware
-        return a response for this exception, raise it.
-        """
-        for middleware_method in self._exception_middleware:
-            response = middleware_method(request, exception)
-            if response:
-                return response
-        raise
-
-    async def send_headers(self, status=200, headers=[[b'content-type', b'text/plain']]):
-        await self.send({
-            'type': 'http.response.start',
-            'status': status,
-            'headers': headers
-        })
-
-    async def send_body(self, body, more_body=False):
-        await self.send({
-            'type': 'http.response.body',
-            'body': body,
-            'more_body': more_body
-        })
