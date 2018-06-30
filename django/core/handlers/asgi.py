@@ -118,19 +118,37 @@ class ASGIRequest(HttpRequest):
     def COOKIES(self):
         return parse_cookie(self.META.get('HTTP_COOKIE', ''))
 
-    async def stream(self):
-        if hasattr(self, "_body"):
-            yield self._body
-        return
+    # async def stream(self):
+    #     if hasattr(self, "_body"):
+    #         yield self._body
+    #     return
 
-    async def body(self):
-        if not hasattr(self, "_body"):
-            body = b""
-            async for chunk in self.stream():
-                body += chunk
-            self._body = body
+    # async def body(self):
+    #     if not hasattr(self, "_body"):
+    #         body = b""
+    #         async for chunk in self.stream():
+    #             body += chunk
+    #         self._body = body
 
-        return self._body
+    #     return self._body
+
+    # @property
+    # def body(self):
+    #     if not hasattr(self, '_body'):
+    #         if self._read_started:
+    #             raise RawPostDataException("You cannot access body after reading from request's data stream")
+
+    #         # Limit the maximum request data size that will be handled in-memory.
+    #         if (settings.DATA_UPLOAD_MAX_MEMORY_SIZE is not None and
+    #                 int(self.META.get('CONTENT_LENGTH') or 0) > settings.DATA_UPLOAD_MAX_MEMORY_SIZE):
+    #             raise RequestDataTooBig('Request body exceeded settings.DATA_UPLOAD_MAX_MEMORY_SIZE.')
+
+    #         try:
+    #             self._body = self.read()
+    #         except IOError as e:
+    #             raise UnreadablePostError(*e.args) from e
+    #         self._stream = BytesIO(self._body)
+    #     return self._body
 
 
 class ASGIHandler:
@@ -151,7 +169,7 @@ class ASGIHandlerInstance:
         self.send = send
 
         request = ASGIRequest(self.scope)
-        await request.body()
+        # request.body()
         response = await self.get_response(request)
 
         await self.send({
